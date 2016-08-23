@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:async';
+part of commandline;
 
 // Splits a line into a list of string args.  Each arg retains any
 // trailing whitespace so that we can reconstruct the original command
@@ -51,6 +51,11 @@ abstract class _CommandBase {
 
   _CommandBase _parent;
   int get _depth => (_parent == null ? 0 : _parent._depth + 1);
+
+  CommandLine get commandLine {
+    assert(_parent != null);
+    return _parent.commandLine;
+  }
 
   // Override in subclasses to provide command-specific argument completion.
   //
@@ -133,6 +138,11 @@ class HotKey {
 // The root of a tree of commands.
 class RootCommand extends _CommandBase {
   RootCommand(List<Command> children) : super(children);
+
+  @override
+  CommandLine get commandLine => _commandLine;
+
+  CommandLine _commandLine;
 
   // Provides a list of possible completions for a line of text.
   Future<List<String>> completeCommand(String line) {
@@ -320,3 +330,4 @@ class NoSuchCommandException extends CommandException {
   @override
   String toString() => "No such command: '$command'";
 }
+

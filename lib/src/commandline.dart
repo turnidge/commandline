@@ -2,79 +2,79 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
+part of commandline;
 
-import 'command.dart';
-import 'terminal.dart';
-
+/// Implements a command line interface.
 class CommandLine {
-  CommandLine(this._cmd,
-              this.term,
-              {Stdin consoleIn,
-               Stdout consoleOut,
-               this.prompt : '> '}) {
-    _stdin = (consoleIn != null ? consoleIn : stdin);
-    _stdout = (consoleOut != null ? consoleOut : stdout);
-    _stdin.echoMode = false;
-    _stdin.lineMode = false;
+  CommandLine(this.term, this._root, { this.prompt : '> '}) {
+    _root._commandLine = this;
+    _in = term.consoleIn;
+    _out = term.consoleOut;
+    _in.echoMode = false;
+    _in.lineMode = false;
     _writePrompt();
-    _stdinSubscription =
-      _stdin.transform(UTF8.decoder).listen(_handleText,
-                                            onError:_stdinError,
-                                            onDone:_stdinDone);
+    _inputSubscription =
+      _in.transform(UTF8.decoder).listen(_handleText,
+                                         onError:_inputError,
+                                         onDone:_inputDone);
     _dumbMode = term.isDumb;
     _resize();
   }
 
   // Ctrl keys
-  static const int runeCtrlA       = 0x01;
-  static const int runeCtrlB       = 0x02;
-  static const int runeCtrlD       = 0x04;
-  static const int runeCtrlE       = 0x05;
-  static const int runeCtrlF       = 0x06;
-  static const int runeTAB         = 0x09;
-  static const int runeNewline     = 0x0a;
-  static const int runeCtrlK       = 0x0b;
-  static const int runeCtrlL       = 0x0c;
-  static const int runeCtrlN       = 0x0e;
-  static const int runeCtrlP       = 0x10;
-  static const int runeCtrlU       = 0x15;
-  static const int runeCtrlY       = 0x19;
-  static const int runeESC         = 0x1b;
-  static const int runeSpace       = 0x20;
-  static const int runeA           = 0x41;
-  static const int runeB           = 0x42;
-  static const int runeC           = 0x43;
-  static const int runeD           = 0x44;
-  static const int runeLeftBracket = 0x5b;
-  static const int runeDEL         = 0x7F;
+  static const int _runeCtrlA       = 0x01;
+  static const int _runeCtrlB       = 0x02;
+  static const int _runeCtrlD       = 0x04;
+  static const int _runeCtrlE       = 0x05;
+  static const int _runeCtrlF       = 0x06;
+  static const int _runeTAB         = 0x09;
+  static const int _runeNewline     = 0x0a;
+  static const int _runeCtrlK       = 0x0b;
+  static const int _runeCtrlL       = 0x0c;
+  static const int _runeCtrlN       = 0x0e;
+  static const int _runeCtrlP       = 0x10;
+  static const int _runeCtrlU       = 0x15;
+  static const int _runeCtrlY       = 0x19;
+  static const int _runeESC         = 0x1b;
+  static const int _runeA           = 0x41;
+  static const int _runeB           = 0x42;
+  static const int _runeC           = 0x43;
+  static const int _runeD           = 0x44;
+  static const int _runeLeftBracket = 0x5b;
+  static const int _runeDEL         = 0x7F;
 
-  RootCommand get rootCommand => _cmd;
-  RootCommand _cmd;
+  RootCommand get rootCommand => _root;
+  final RootCommand _root;
   bool _dumbMode;
 
   bool get _promptShown => _hideDepth == 0;
 
   Future<Null> quit() async {
-    await _done();
+    await _closeInput();
   }
 
-  void _stdinError(dynamic e, StackTrace st) {
+  Completer<Null> _inputCompleter = new Completer<Null>();
+  Future<Null> get onInputDone => _inputCompleter.future;
+
+  void _inputDone() {
+    _closeInput().then((_) {
+      _inputCompleter.complete();
+    });
+  }
+
+  void _inputError(dynamic e, StackTrace st) {
     print('Unexpected error reading input: $e\n$st');
-    _done();
+    _closeInput().then((_) {
+      _inputCompleter.complete();
+    });
   }
 
-  void _stdinDone() {
-    _done();
-  }
-
-  Future<Null> _done() {
-    _stdin.echoMode = true;
-    _stdin.lineMode = true;
-    Future<Null> future = _stdinSubscription.cancel();
+  Future<Null> _closeInput() {
+    assert(_inputSubscription != null);
+    _in.echoMode = true;
+    _in.lineMode = true;
+    Future<Null> future = _inputSubscription.cancel();
+    _inputSubscription = null;
     if (future != null) {
       return future;
     } else {
@@ -107,7 +107,7 @@ class CommandLine {
         int rune = runes[pos];
 
         // Count consecutive tabs because double-tab is meaningful.
-        if (rune == runeTAB) {
+        if (rune == _runeTAB) {
           _tabCount++;
         } else {
           _tabCount = 0;
@@ -129,12 +129,13 @@ class CommandLine {
   }
 
   bool _matchRunes(List<int> runes, int pos, List<int> match) {
-    if (runes.length < pos + match.length)
+    if (runes.length < pos + match.length) {
       return false;
-
+    }
     for (int i = 0; i < match.length; i++) {
-      if (runes[pos + i] != match[i])
+      if (runes[pos + i] != match[i]) {
         return false;
+      }
     }
     return true;
   }
@@ -143,88 +144,88 @@ class CommandLine {
     int runesConsumed = 1;  // Most common result.
     int char = runes[pos];
     switch (char) {
-      case runeCtrlA:
+      case _runeCtrlA:
         _home();
         break;
 
-      case runeCtrlB:
+      case _runeCtrlB:
         _leftArrow();
         break;
 
-      case runeCtrlD:
+      case _runeCtrlD:
         if (_currentLine.length == 0) {
           // ^D on an empty line means quit.
-          _stdout.writeln("^D");
-          _done();
+          _out.writeln("^D");
+          _inputDone();
         } else {
           _delete();
         }
         break;
 
-      case runeCtrlE:
+      case _runeCtrlE:
         _end();
         break;
 
-      case runeCtrlF:
+      case _runeCtrlF:
         _rightArrow();
         break;
 
-      case runeTAB:
+      case _runeTAB:
         _complete(_tabCount > 1);
         break;
 
-      case runeNewline:
+      case _runeNewline:
         _newline();
         break;
 
-      case runeCtrlK:
+      case _runeCtrlK:
         _kill();
         break;
 
-      case runeCtrlL:
+      case _runeCtrlL:
         _clearScreen();
         break;
 
-      case runeCtrlN:
+      case _runeCtrlN:
         _historyNext();
         break;
 
-      case runeCtrlP:
+      case _runeCtrlP:
         _historyPrevious();
         break;
 
-      case runeCtrlU:
+      case _runeCtrlU:
         _clearLine();
         break;
 
-      case runeCtrlY:
+      case _runeCtrlY:
         _yank();
         break;
 
-      case runeESC:
+      case _runeESC:
         if (pos + 1 < runes.length) {
-          if (_matchRunes(runes, pos + 1, <int>[runeLeftBracket, runeA])) {
+          if (_matchRunes(runes, pos + 1, <int>[_runeLeftBracket, _runeA])) {
             // ^[[A = up arrow
             _historyPrevious();
             runesConsumed = 3;
             break;
           } else if (_matchRunes(runes, pos + 1,
-                                 <int>[runeLeftBracket, runeB])) {
+                                 <int>[_runeLeftBracket, _runeB])) {
             // ^[[B = down arrow
             _historyNext();
             runesConsumed = 3;
           } else if (_matchRunes(runes, pos + 1,
-                                 <int>[runeLeftBracket, runeC])) {
+                                 <int>[_runeLeftBracket, _runeC])) {
             // ^[[C = right arrow
             _rightArrow();
             runesConsumed = 3;
           } else if (_matchRunes(runes, pos + 1,
-                                 <int>[runeLeftBracket, runeD])) {
+                                 <int>[_runeLeftBracket, _runeD])) {
             // ^[[D = left arrow
             _leftArrow();
             runesConsumed = 3;
           } else {
-            HotKey hotKey = _cmd.matchHotKey(runes.skip(pos).toList());
+            HotKey hotKey = _root.matchHotKey(runes.skip(pos).toList());
             if (hotKey != null) {
               runesConsumed = hotKey.runes.length;
               List<int> line = hotKey.expansion.runes.toList();
@@ -235,7 +236,7 @@ class CommandLine {
         }
         break;
 
-      case runeDEL:
+      case _runeDEL:
         _backspace();
         break;
 
@@ -250,56 +251,56 @@ class CommandLine {
     int runesConsumed = 1;  // Most common result.
     int char = runes[pos];
     switch (char) {
-      case runeCtrlD:
+      case _runeCtrlD:
         if (_currentLine.length == 0) {
           // ^D on an empty line means quit.
-          _stdout.writeln("^D");
-          _done();
+          _out.writeln("^D");
+          _inputDone();
         }
         break;
 
-      case runeTAB:
+      case _runeTAB:
         _complete(_tabCount > 1);
         break;
 
-      case runeNewline:
+      case _runeNewline:
         _newline();
         break;
 
-      case runeCtrlN:
+      case _runeCtrlN:
         _historyNext();
         break;
 
-      case runeCtrlP:
+      case _runeCtrlP:
         _historyPrevious();
         break;
 
-      case runeCtrlU:
+      case _runeCtrlU:
         _clearLine();
         break;
 
-      case runeESC:
+      case _runeESC:
         if (pos + 1 < runes.length) {
-          if (_matchRunes(runes, pos + 1, <int>[runeLeftBracket, runeA])) {
+          if (_matchRunes(runes, pos + 1, <int>[_runeLeftBracket, _runeA])) {
             // ^[[A = up arrow
             _historyPrevious();
             runesConsumed = 3;
             break;
           } else if (_matchRunes(runes, pos + 1,
-                                 <int>[runeLeftBracket, runeB])) {
+                                 <int>[_runeLeftBracket, _runeB])) {
             // ^[[B = down arrow
             _historyNext();
             runesConsumed = 3;
           } else if (_matchRunes(runes, pos + 1,
-                                 <int>[runeLeftBracket, runeC])) {
+                                 <int>[_runeLeftBracket, _runeC])) {
             // ^[[C = right arrow - Ignore.
             runesConsumed = 3;
           } else if (_matchRunes(runes, pos + 1,
-                                 <int>[runeLeftBracket, runeD])) {
+                                 <int>[_runeLeftBracket, _runeD])) {
             // ^[[D = left arrow - Ignore.
             runesConsumed = 3;
           } else {
-            HotKey hotKey = _cmd.matchHotKey(runes.skip(pos).toList());
+            HotKey hotKey = _root.matchHotKey(runes.skip(pos).toList());
             if (hotKey != null) {
               runesConsumed = hotKey.runes.length;
               List<int> line = hotKey.expansion.runes.toList();
@@ -310,7 +311,7 @@ class CommandLine {
         }
         break;
 
-      case runeDEL:
+      case _runeDEL:
         _backspace();
         break;
 
@@ -342,7 +343,7 @@ class CommandLine {
 
   void _writePrompt() {
     _resize();
-    _stdout.write(term.toBold(prompt));
+    _out.write(term.toBold(prompt));
   }
 
   void _addChars(Iterable<int> chars) {
@@ -354,9 +355,9 @@ class CommandLine {
   }
 
   void _backspace() {
-    if (_cursorPos == 0)
+    if (_cursorPos == 0) {
       return;
-
+    }
     List<int> newLine = <int>[];
     newLine..addAll(_currentLine.take(_cursorPos - 1))
            ..addAll(_currentLine.skip(_cursorPos));
@@ -364,9 +365,9 @@ class CommandLine {
   }
 
   void _delete() {
-    if (_cursorPos == _currentLine.length)
+    if (_cursorPos == _currentLine.length) {
       return;
-
+    }
     List<int> newLine = <int>[];
     newLine..addAll(_currentLine.take(_cursorPos))
            ..addAll(_currentLine.skip(_cursorPos + 1));
@@ -382,7 +383,7 @@ class CommandLine {
   }
 
   void _clearScreen() {
-    _stdout.write(term.clearScreen);
+    _out.write(term.clearScreen);
     _writePromptAndLine();
   }
 
@@ -408,18 +409,18 @@ class CommandLine {
   static String _commonPrefix(String a, String b) {
     int pos = 0;
     while (pos < a.length && pos < b.length) {
-      if (a.codeUnitAt(pos) != b.codeUnitAt(pos))
+      if (a.codeUnitAt(pos) != b.codeUnitAt(pos)) {
         break;
-
+      }
       pos++;
     }
     return a.substring(0, pos);
   }
 
   static String _foldCompletions(List<String> values) {
-    if (values.length == 0)
+    if (values.length == 0) {
       return '';
-
+    }
     String prefix = values[0];
     for (int i = 1; i < values.length; i++) {
       prefix = _commonPrefix(prefix, values[i]);
@@ -430,7 +431,7 @@ class CommandLine {
   Future<Null> _complete(bool showCompletions) async {
     List<int> linePrefix = _currentLine.take(_cursorPos).toList();
     String lineAsString = new String.fromCharCodes(linePrefix);
-    List<String> completions = await _cmd.completeCommand(lineAsString);
+    List<String> completions = await _root.completeCommand(lineAsString);
     String completion;
     if (completions.length == 0) {
       // No completions.  Leave the line alone.
@@ -448,8 +449,8 @@ class CommandLine {
       // User hit double-TAB.  Show them all possible completions.
       completions.sort((String a, String b) => a.compareTo(b));
       _move(_cursorPos, _currentLine.length);
-      _stdout.writeln();
-      _stdout.writeln(completions);
+      _out.writeln();
+      _out.writeln(completions);
       _writePromptAndLine();
       return;
 
@@ -466,7 +467,7 @@ class CommandLine {
 
   Future<Null> _newline() async {
     _end();
-    _stdout.writeln();
+    _out.writeln();
 
     // Prompt is implicitly hidden at this point.
     _hideDepth++;
@@ -475,7 +476,7 @@ class CommandLine {
     _currentLine = <int>[];
     _cursorPos = 0;
     try {
-      await _cmd.runCommand(text);
+      await _root.runCommand(text);
     } catch (e) {
       print('$e');
     }
@@ -494,20 +495,20 @@ class CommandLine {
 
   void _historyPrevious() {
     String text = new String.fromCharCodes(_currentLine);
-    List<int> newLine = _cmd.historyPrev(text).runes.toList();
+    List<int> newLine = _root.historyPrev(text).runes.toList();
     _update(newLine, newLine.length);
   }
 
   void _historyNext() {
     String text = new String.fromCharCodes(_currentLine);
-    List<int> newLine = _cmd.historyNext(text).runes.toList();
+    List<int> newLine = _root.historyNext(text).runes.toList();
     _update(newLine, newLine.length);
   }
 
   void _updatePos(int newCursorPos) {
-    if (newCursorPos < 0)
+    if (newCursorPos < 0) {
       return;
-
+    }
     if (newCursorPos > _currentLine.length)
       return;
 
@@ -521,8 +522,9 @@ class CommandLine {
     // Find first difference.
     int diffPos;
     for (diffPos = 0; diffPos < sharedLen; diffPos++) {
-      if (_currentLine[diffPos] != newLine[diffPos])
+      if (_currentLine[diffPos] != newLine[diffPos]) {
         break;
+      }
     }
 
     if (_dumbMode) {
@@ -536,7 +538,7 @@ class CommandLine {
         _currentLine = newLine;
       } else {
         // We can't erase, so just move forward.
-        _stdout.writeln();
+        _out.writeln();
         _currentLine = newLine;
         _cursorPos = newCursorPos;
         _writePromptAndLine();
@@ -558,9 +560,9 @@ class CommandLine {
     _currentLine = newLine;
   }
 
-  void print(String text) {
+  void print(String text, { bool bold: false }) {
     hide();
-    _stdout.writeln(text);
+    _out.writeln(text);
     show();
   }
 
@@ -571,7 +573,7 @@ class CommandLine {
     }
     _hideDepth++;
     if (_dumbMode) {
-      _stdout.writeln();
+      _out.writeln();
       return;
     }
     // We need to erase everything, including the prompt.
@@ -582,19 +584,19 @@ class CommandLine {
     if (curLine < lastLine) {
       for (int i = 0; i < (lastLine - curLine); i++) {
         // This moves us to column 0.
-        _stdout.write(term.cursorDown);
+        _out.write(term.cursorDown);
       }
       curLine = lastLine;
     } else {
       // Move to column 0.
-      _stdout.write('\r');
+      _out.write('\r');
     }
 
     // Work our way up, clearing lines.
     while (true) {
-      _stdout.write(term.clearEOL);
+      _out.write(term.clearEOL);
       if (curLine > 0) {
-        _stdout.write(term.cursorUp);
+        _out.write(term.cursorUp);
       } else {
         break;
       }
@@ -602,11 +604,15 @@ class CommandLine {
   }
 
   void show() {
+    if (_inputSubscription == null) {
+      // No more input to process.
+      return;
+    }
     assert(_hideDepth > 0);
     _hideDepth--;
-    if (_hideDepth > 0)
+    if (_hideDepth > 0) {
       return;
-
+    }
     _writePromptAndLine();
 
     // If input was buffered while the prompt was hidden, process it
@@ -619,39 +625,40 @@ class CommandLine {
   }
 
   int _writeRange(List<int> text, int pos, int writeToPos) {
-    if (pos >= writeToPos)
+    if (pos >= writeToPos) {
       return pos;
-
+    }
     while (pos < writeToPos) {
       int margin = _nextMargin(pos);
       int limit = min(writeToPos, margin);
-      _stdout.write(new String.fromCharCodes(text.getRange(pos, limit)));
+      _out.write(new String.fromCharCodes(text.getRange(pos, limit)));
       pos = limit;
-      if (pos == margin)
-        _stdout.write('\n');
+      if (pos == margin) {
+        _out.write('\n');
+      }
     }
     return pos;
   }
 
   int _clearRange(int pos, int clearToPos) {
-    if (pos >= clearToPos)
+    if (pos >= clearToPos) {
       return pos;
-
+    }
     while (true) {
       int limit = _nextMargin(pos);
-      _stdout.write(term.clearEOL);
-      if (limit >= clearToPos)
+      _out.write(term.clearEOL);
+      if (limit >= clearToPos) {
         return pos;
-
-      _stdout.write('\n');
+      }
+      _out.write('\n');
       pos = limit;
     }
   }
 
   int _move(int pos, int newPos) {
-    if (pos == newPos)
+    if (pos == newPos) {
       return pos;
-
+    }
     int curCol = _getCol(pos);
     int curLine = _getLine(pos);
     int newCol = _getCol(newPos);
@@ -659,12 +666,12 @@ class CommandLine {
 
     if (curLine > newLine) {
       for (int i = 0; i < (curLine - newLine); i++) {
-        _stdout.write(term.cursorUp);
+        _out.write(term.cursorUp);
       }
     }
     if (curLine < newLine) {
       for (int i = 0; i < (newLine - curLine); i++) {
-        _stdout.write(term.cursorDown);
+        _out.write(term.cursorDown);
       }
 
       // Moving down resets column to zero, oddly.
@@ -672,12 +679,12 @@ class CommandLine {
     }
     if (curCol > newCol) {
       for (int i = 0; i < (curCol - newCol); i++) {
-        _stdout.write(term.cursorBack);
+        _out.write(term.cursorBack);
       }
     }
     if (curCol < newCol) {
       for (int i = 0; i < (newCol - curCol); i++) {
-        _stdout.write(term.cursorForward);
+        _out.write(term.cursorForward);
       }
     }
 
@@ -699,9 +706,9 @@ class CommandLine {
     return truePos % _screenWidth;
   }
 
-  Stdin _stdin;
-  StreamSubscription<String> _stdinSubscription;
-  IOSink _stdout;
+  Stdin _in;
+  StreamSubscription<String> _inputSubscription;
+  IOSink _out;
   final String prompt;
   int _hideDepth = 0;
   final Terminal term;
@@ -712,4 +719,119 @@ class CommandLine {
   int _cursorPos = 0;
   int _tabCount = 0;
   List<int> _killBuffer = <int>[];
+}
+
+abstract class HelpableCommand extends Command {
+  HelpableCommand(String name, List<Command> children)
+    : super(name, children);
+
+  String get helpShort;
+  String get helpLong;
+}
+
+int _sortCommands(Command a, Command b) => a.name.compareTo(b.name);
+
+/// A default implementation of a help command, provided for convenience.
+class HelpCommand extends HelpableCommand {
+  HelpCommand([ String name = 'help', List<Command> children ])
+    : super(name, children);
+
+  String _nameAndAlias(Command cmd) {
+    if (cmd.alias == null) {
+      return cmd.fullName;
+    } else {
+      return '${cmd.fullName}, ${cmd.alias}';
+    }
+  }
+
+  @override
+  Future<Null> run(List<String> args) async {
+    if (args.length == 0) {
+      // Print list of all top-level commands.
+      List<Command> commands =
+          commandLine.rootCommand.matchCommand(<String>[], false);
+      commands.sort(_sortCommands);
+      commandLine.print('Commands:\n', bold: true);
+      for (Command command in commands) {
+        if (command is HelpableCommand) {
+          HelpableCommand helpable = command;
+          commandLine.print('${_nameAndAlias(command).padRight(12)} '
+                            '- ${helpable.helpShort}');
+        }
+      }
+      commandLine.print("\nHotkeys:", bold: true);
+      commandLine.print(
+          "\n"
+          "[TAB]        - complete a command (try 'p[TAB][TAB]')\n"
+          "[Up Arrow]   - history previous\n"
+          "[Down Arrow] - history next\n"
+          "[^L]         - clear screen");
+      List<HotKey> keys = commandLine.rootCommand.hotKeys;
+      for (int i = 0; i < keys.length; i++) {
+        HotKey key = keys[i];
+        commandLine.print(
+            "${key.userName.padRight(12)} - '${key.expansion}'");
+      }
+      commandLine.print(
+          "\nFor more information on a specific command type "
+          "'help <command>'\n"
+          "Command prefixes are accepted (e.g. 'h' for 'help')\n");
+    } else {
+      // Print any matching commands.
+      List<Command> commands = commandLine.rootCommand.matchCommand(args, true);
+      commands.sort(_sortCommands);
+      if (commands.isEmpty) {
+        String line = args.join(' ');
+        commandLine.print("No command matches '$line'");
+        return;
+      }
+      commandLine.print('');
+      for (Command command in commands) {
+        if (command is! HelpableCommand) {
+          continue;
+        }
+        HelpableCommand helpable = command;
+        commandLine.print(_nameAndAlias(command), bold: true);
+        commandLine.print(helpable.helpLong);
+
+        List<String> newArgs = <String>[];
+        newArgs.addAll(args.take(args.length - 1));
+        newArgs.add(command.name);
+        newArgs.add('');
+        List<Command> subCommands =
+            commandLine.rootCommand.matchCommand(newArgs, false);
+        subCommands.remove(command);
+        if (subCommands.isNotEmpty) {
+          subCommands.sort(_sortCommands);
+          commandLine.print('Subcommands:\n');
+          for (Command subCommand in subCommands) {
+            if (subCommand is HelpableCommand) {
+              HelpableCommand subHelpable = subCommand;
+              commandLine.print('    ${subCommand.fullName.padRight(16)} '
+                             '- ${subHelpable.helpShort}');
+            }
+          }
+          commandLine.print('');
+        }
+      }
+    }
+  }
+
+  @override
+  Future<List<String>> complete(List<String> args) {
+    List<Command> commands = commandLine.rootCommand.matchCommand(args, false);
+    List<String> result = commands.map((Command cmd) => '${cmd.fullName} ');
+    return new Future<List<String>>.value(result);
+  }
+
+  @override
+  final String helpShort =
+      'List commands or provide details about a specific command';
+
+  @override
+  final String helpLong =
+      'List commands or provide details about a specific command.\n'
+      '\n'
+      'Syntax: help            - Show a list of all commands\n'
+      '        help <command>  - Help for a specific command\n';
 }

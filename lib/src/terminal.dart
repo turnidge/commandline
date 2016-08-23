@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'dart:convert' show UTF8;
-import 'dart:io';
+part of commandline;
 
 String _tputGetSequence(String capName, { String orElse }) {
   if (Terminal._testMode)
@@ -21,10 +20,13 @@ String _tputGetSequence(String capName, { String orElse }) {
 }
 
 class Terminal {
-  Terminal();
+  Terminal(this.consoleIn, this.consoleOut);
 
   // Used during development to see all special characters in output.
   static final bool _testMode = false;
+
+  final Stdin consoleIn;
+  final Stdout consoleOut;
 
   bool get isDumb {
     return (cursorBack == null ||
@@ -66,8 +68,6 @@ class Terminal {
   final String resetText = _tputGetSequence('sgr0', orElse: '');
 
   int get cols => stdout.terminalColumns;
-
-  bool supportsColor;
 
   // Convenience method for bolding text.
   String toBold(String str) => '$boldText$str$resetText';

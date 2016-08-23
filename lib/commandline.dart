@@ -2,6 +2,13 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-export 'src/command.dart';
-export 'src/commandline.dart';
-export 'src/terminal.dart';
+library commandline;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+part 'src/command.dart';
+part 'src/commandline.dart';
+part 'src/terminal.dart';
